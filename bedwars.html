@@ -1,0 +1,618 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>BedWars Online</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,sans-serif;background:#1b1f2a;color:#eee;overflow:hidden}
+.hidden{display:none!important}
+.screen{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:16px}
+.card{background:#262c3b;border-radius:12px;padding:20px;width:min(440px,92vw);display:flex;flex-direction:column;gap:8px}
+.row{display:flex;gap:8px;align-items:center}
+input,select,button{padding:8px 10px;border-radius:8px;border:1px solid #3a4258;background:#1d2231;color:#fff;font-size:15px}
+button{cursor:pointer;background:#3c6fd6;border-color:#3c6fd6}
+button:hover{filter:brightness(1.12)}
+input{flex:1;min-width:0}
+ul{list-style:none;padding:0;margin:0}
+li{padding:6px 8px;border-radius:6px;margin:4px 0;background:#1d2231}
+li.red{border-left:4px solid #dd3333}
+li.blue{border-left:4px solid #3355dd}
+.fr{justify-content:space-between}
+#game{position:fixed;inset:0;background:#000}
+#c{position:absolute;inset:0;width:100%;height:100%;display:block}
+#crosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:24px;pointer-events:none;text-shadow:0 0 3px #000}
+#hotbar{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);display:flex;gap:6px}
+.slot{width:54px;height:54px;border:2px solid #222;border-radius:6px;position:relative;color:#fff;text-shadow:0 1px 2px #000;font-size:12px}
+.slot.sel{border-color:#fff;transform:scale(1.1)}
+.slot span{position:absolute;bottom:2px;right:4px}
+.slot i{position:absolute;top:2px;left:4px;font-style:normal}
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:20}
+#banner .card{text-align:center;align-items:center}
+#toasts{position:fixed;top:12px;right:12px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.toast{background:#333b50;padding:10px 14px;border-radius:8px;display:flex;gap:8px;align-items:center}
+</style>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "@supabase/supabase-js":"https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm"
+}}
+</script>
+</head>
+<body>
+
+<div id="menu" class="screen">
+  <h1>⛏ BedWars Online</h1>
+  <div class="card">
+    <div class="row"><span id="who" style="flex:1"></span><button id="btnSettings">⚙ Cài đặt</button></div>
+    <h3>Tạo máy chủ</h3>
+    <input id="srvName" placeholder="Tên máy chủ" maxlength="24">
+    <div class="row">
+      <select id="srvMode"><option value="survival">Sinh tồn</option><option value="creative">Sáng tạo</option></select>
+      <button id="btnCreate">Tạo máy chủ</button>
+    </div>
+    <h3>Vào máy chủ bằng mã</h3>
+    <div class="row"><input id="joinCode" placeholder="Mã 6 ký tự" maxlength="6"><button id="btnJoin">Vào</button></div>
+    <h3>Bạn bè</h3>
+    <div class="row"><input id="friendId" placeholder="Dán ID bạn bè"><button id="btnAddFriend">Kết bạn</button></div>
+    <div id="friends"></div>
+  </div>
+</div>
+
+<div id="room" class="screen hidden">
+  <div class="card">
+    <h2 id="roomTitle"></h2>
+    <div class="row">Mã máy chủ: <b id="roomCode" style="font-size:22px;letter-spacing:3px"></b><button id="btnCopy">Sao chép</button></div>
+    <div id="roomMode"></div>
+    <ul id="players"></ul>
+    <div class="row">
+      <button id="btnSwitch">Đổi đội</button>
+      <button id="btnStart">Bắt đầu</button>
+      <button id="btnLeave">Rời</button>
+    </div>
+  </div>
+  <div class="card">
+    <h3>Mời bạn bè</h3>
+    <div id="friendsRoom"></div>
+  </div>
+</div>
+
+<div id="game" class="hidden">
+  <canvas id="c"></canvas>
+  <div id="crosshair">+</div>
+  <div id="hotbar"></div>
+  <div id="pause" class="overlay hidden">
+    <div class="card">
+      <h2>Tạm dừng</h2>
+      <button id="btnResume">Tiếp tục</button>
+      <button id="btnQuit">Rời trận</button>
+      <small>Nhấn ESC để hiện chuột. Bấm "Tiếp tục" để chơi lại.</small>
+    </div>
+  </div>
+  <div id="banner" class="overlay hidden"></div>
+</div>
+
+<div id="settings" class="overlay hidden">
+  <div class="card">
+    <h2>Cài đặt</h2>
+    <label>Tên người chơi</label>
+    <input id="setName" maxlength="16">
+    <label>Độ nhạy chuột</label>
+    <input id="setSens" type="range" min="0.3" max="3" step="0.1">
+    <label>ID của bạn (gửi cho bạn bè để họ kết bạn với bạn)</label>
+    <div class="row"><code id="setId" style="flex:1;overflow:hidden;font-size:12px"></code><button id="btnCopyId">Sao chép</button></div>
+    <div class="row"><button id="btnSaveSettings">Lưu</button><button id="btnCloseSettings">Đóng</button></div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script type="module">
+// Supabase project used by BedWars Online.
+// The publishable key is safe to ship in client code.
+const SUPABASE_URL = "https://gmrnkunbhzcnjtegkfyd.supabase.co";
+const SUPABASE_KEY = "sb_publishable_1CjucL-_JaYkKgtGbaWp7g_QebubBd1";
+
+import * as THREE from 'three';
+import { createClient } from '@supabase/supabase-js';
+
+const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const TEAM_NAME = { red: 'Đỏ', blue: 'Xanh' };
+
+// ---------- Cài đặt & danh tính ----------
+let pid = localStorage.getItem('bw_pid') || crypto.randomUUID();
+localStorage.setItem('bw_pid', pid);
+let myName = localStorage.getItem('bw_name') || '';
+let sens = +(localStorage.getItem('bw_sens') || 1);
+
+function toast(msg) {
+  const t = document.createElement('div');
+  t.className = 'toast'; t.textContent = msg;
+  $('toasts').appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+function openSettings() {
+  $('setName').value = myName; $('setSens').value = sens; $('setId').textContent = pid;
+  $('settings').classList.remove('hidden');
+}
+$('btnSettings').onclick = openSettings;
+$('btnCloseSettings').onclick = () => myName ? $('settings').classList.add('hidden') : toast('Hãy nhập tên trước');
+$('btnCopyId').onclick = () => navigator.clipboard.writeText(pid).then(() => toast('Đã sao chép ID'));
+$('btnSaveSettings').onclick = () => {
+  const n = $('setName').value.trim();
+  if (!n) return toast('Tên không được để trống');
+  myName = n.slice(0, 16); sens = +$('setSens').value;
+  localStorage.setItem('bw_name', myName); localStorage.setItem('bw_sens', sens);
+  $('who').textContent = '👤 ' + myName;
+  $('settings').classList.add('hidden');
+};
+$('who').textContent = myName ? '👤 ' + myName : '';
+if (!myName) openSettings();
+
+// ---------- Khối (texture tạo bằng code, KHÔNG lấy từ Minecraft) ----------
+// Muốn dùng texture Minecraft của riêng bạn: đặt ảnh 16x16 vào thư mục rồi thay tex() bằng TextureLoader.
+const BLOCKS = {
+  grass:    { c: '#5b8f3a', s: '#7a5230', top: '#6fb040', bottom: '#7a5230' },
+  dirt:     { c: '#7a5230' },
+  stone:    { c: '#7f7f7f' },
+  planks:   { c: '#b48a4f' },
+  wood:     { c: '#6b4a2b' },
+  wool_red: { c: '#b03232' },
+  wool_blue:{ c: '#3253b0' },
+  bed_red:  { c: '#a82020' },
+  bed_blue: { c: '#2040a8' }
+};
+const LABEL = { dirt: 'Đất', stone: 'Đá', planks: 'Ván', wood: 'Gỗ', wool_red: 'Len đỏ', wool_blue: 'Len xanh' };
+const HOTBAR = ['stone', 'planks', 'wood', 'dirt', 'wool_red', 'wool_blue'];
+
+function tex(hex) {
+  const c = document.createElement('canvas'); c.width = c.height = 16;
+  const g = c.getContext('2d');
+  g.fillStyle = hex; g.fillRect(0, 0, 16, 16);
+  for (let i = 0; i < 70; i++) {
+    g.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.12)' : 'rgba(255,255,255,0.1)';
+    g.fillRect(Math.random() * 16 | 0, Math.random() * 16 | 0, 1, 1);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter; t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+const matCache = {};
+function mats(type) {
+  if (matCache[type]) return matCache[type];
+  const d = BLOCKS[type];
+  const side = new THREE.MeshLambertMaterial({ map: tex(d.s || d.c) });
+  const top = new THREE.MeshLambertMaterial({ map: tex(d.top || d.c) });
+  const bot = new THREE.MeshLambertMaterial({ map: tex(d.bottom || d.c) });
+  return (matCache[type] = [side, side, top, bot, side, side]);
+}
+
+// ---------- Thế giới (sinh sẵn + phần người chơi thay đổi) ----------
+const HALF = 22, Y_MAX = 12, HW = 0.3, H = 1.8;
+const over = new Map(); // "x,y,z" -> loại khối ('' = không khí)
+const K = (x, y, z) => `${x},${y},${z}`;
+function base(x, y, z) {
+  if (Math.abs(x) > HALF || Math.abs(z) > HALF) return '';
+  if (y === 1 && z === 0 && x === -14) return 'bed_red';
+  if (y === 1 && z === 0 && x === 14) return 'bed_blue';
+  if (y >= 1) return '';
+  if (y === 0) return [-14, 14].some(s => Math.abs(x - s) <= 2 && Math.abs(z) <= 2) ? 'planks' : 'grass';
+  if (y >= -2) return 'dirt';
+  if (y === -3) return 'stone';
+  return '';
+}
+const getB = (x, y, z) => over.has(K(x, y, z)) ? over.get(K(x, y, z)) : base(x, y, z);
+function setB(x, y, z, t, send) {
+  over.set(K(x, y, z), t); dirty = true;
+  if (send && channel) channel.send({ type: 'broadcast', event: 'blk', payload: { k: K(x, y, z), t } });
+}
+
+// ---------- Three.js ----------
+const canvas = $('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#9fd3ff');
+scene.fog = new THREE.Fog('#9fd3ff', 60, 140);
+const camera = new THREE.PerspectiveCamera(75, 1, 0.05, 300);
+scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+const sun = new THREE.DirectionalLight(0xffffff, 0.8);
+sun.position.set(20, 40, 10); scene.add(sun);
+function resize() {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+addEventListener('resize', resize);
+
+const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+const dummy = new THREE.Object3D();
+let meshes = [], dirty = false;
+function rebuild() {
+  for (const m of meshes) { scene.remove(m); m.dispose(); }
+  meshes = [];
+  const buckets = {};
+  for (let x = -HALF; x <= HALF; x++)
+    for (let y = -3; y <= Y_MAX; y++)
+      for (let z = -HALF; z <= HALF; z++) {
+        const t = getB(x, y, z);
+        if (!t) continue;
+        // bỏ các khối bị che kín để nhẹ máy
+        if (getB(x + 1, y, z) && getB(x - 1, y, z) && getB(x, y + 1, z) &&
+            getB(x, y - 1, z) && getB(x, y, z + 1) && getB(x, y, z - 1)) continue;
+        (buckets[t] ||= []).push([x, y, z]);
+      }
+  for (const t in buckets) {
+    const list = buckets[t];
+    const im = new THREE.InstancedMesh(boxGeo, mats(t), list.length);
+    list.forEach(([x, y, z], i) => {
+      dummy.position.set(x + 0.5, y + 0.5, z + 0.5); dummy.updateMatrix();
+      im.setMatrixAt(i, dummy.matrix);
+    });
+    im.instanceMatrix.needsUpdate = true;
+    scene.add(im); meshes.push(im);
+  }
+}
+
+// ---------- Người chơi ----------
+const P = { x: 0, y: 1, z: 0, vx: 0, vy: 0, vz: 0, ground: false, fly: false, yaw: 0, pitch: 0, team: 'red' };
+let mode = 'survival', selected = 0, inv = {}, flyLast = 0, gameState = 'lobby';
+const keys = {};
+
+function hits(x, y, z) {
+  for (let i = Math.floor(x - HW); i <= Math.floor(x + HW); i++)
+    for (let j = Math.floor(y); j <= Math.floor(y + H - 0.01); j++)
+      for (let k = Math.floor(z - HW); k <= Math.floor(z + HW); k++)
+        if (getB(i, j, k)) return true;
+  return false;
+}
+function move(axis, d) {
+  const n = { x: P.x, y: P.y, z: P.z };
+  n[axis] += d;
+  if (hits(n.x, n.y, n.z)) {
+    if (axis === 'y') { if (d < 0) P.ground = true; P.vy = 0; }
+    else if (axis === 'x') P.vx = 0; else P.vz = 0;
+    return;
+  }
+  P.x = n.x; P.y = n.y; P.z = n.z;
+}
+function physics(dt) {
+  const fly = mode === 'creative' && P.fly;
+  const sp = fly ? 9 : 5.5;
+  const f = (keys.KeyW ? 1 : 0) - (keys.KeyS ? 1 : 0);
+  const r = (keys.KeyD ? 1 : 0) - (keys.KeyA ? 1 : 0);
+  const dx = -Math.sin(P.yaw) * f + Math.cos(P.yaw) * r;
+  const dz = -Math.cos(P.yaw) * f - Math.sin(P.yaw) * r;
+  const len = Math.hypot(dx, dz) || 1;
+  const moving = f || r ? 1 : 0;
+  P.vx = dx / len * sp * moving; P.vz = dz / len * sp * moving;
+  if (fly) P.vy = ((keys.Space ? 1 : 0) - (keys.ShiftLeft ? 1 : 0)) * sp;
+  else {
+    if (keys.Space && P.ground) P.vy = 8.6;
+    P.vy = Math.max(P.vy - 28 * dt, -40);
+  }
+  P.ground = false;
+  const steps = 4;
+  for (let i = 0; i < steps; i++) {
+    move('x', P.vx * dt / steps); move('z', P.vz * dt / steps); move('y', P.vy * dt / steps);
+  }
+}
+function spawn() {
+  P.team = myTeam;
+  P.x = P.team === 'red' ? -14 : 14; P.z = 4; P.y = 1;
+  P.vx = P.vy = P.vz = 0; P.fly = false;
+  P.yaw = P.team === 'red' ? -Math.PI / 2 : Math.PI / 2; P.pitch = 0;
+}
+
+// Tìm khối đang nhắm và ô trống ngay trước nó
+function target() {
+  const ex = P.x, ey = P.y + 1.62, ez = P.z;
+  const dx = -Math.sin(P.yaw) * Math.cos(P.pitch), dy = Math.sin(P.pitch), dz = -Math.cos(P.yaw) * Math.cos(P.pitch);
+  let last = null;
+  for (let t = 0; t < 6; t += 0.05) {
+    const c = [Math.floor(ex + dx * t), Math.floor(ey + dy * t), Math.floor(ez + dz * t)];
+    if (getB(...c)) return { hit: c, place: last };
+    last = c;
+  }
+  return null;
+}
+function overlapsPlayer(x, y, z) {
+  return P.x + HW > x && P.x - HW < x + 1 && P.z + HW > z && P.z - HW < z + 1 && P.y + H > y && P.y < y + 1;
+}
+function breakBlock() {
+  const t = target(); if (!t) return;
+  const [x, y, z] = t.hit; const b = getB(x, y, z);
+  if (b.startsWith('bed_')) {
+    const team = b.slice(4);
+    if (team === P.team) return toast('Không thể phá giường của đội mình');
+    setB(x, y, z, '', true);
+    endGame(P.team);
+    return;
+  }
+  setB(x, y, z, '', true);
+  if (mode === 'survival') { inv[b] = Math.min(64, (inv[b] || 0) + 1); updateHotbar(); }
+}
+function placeBlock() {
+  const t = target(); if (!t || !t.place) return;
+  const type = HOTBAR[selected]; const [x, y, z] = t.place;
+  if (mode === 'survival' && !(inv[type] > 0)) return;
+  if (overlapsPlayer(x, y, z)) return;
+  if (Math.abs(x) > HALF || Math.abs(z) > HALF || y < -3 || y > Y_MAX) return;
+  setB(x, y, z, type, true);
+  if (mode === 'survival') { inv[type]--; updateHotbar(); }
+}
+function updateHotbar() {
+  $('hotbar').innerHTML = HOTBAR.map((t, i) =>
+    `<div class="slot ${i === selected ? 'sel' : ''}" style="background:${BLOCKS[t].c}">` +
+    `<i>${i + 1}</i><span>${mode === 'creative' ? '∞' : (inv[t] ?? 0)}</span></div>`).join('');
+}
+
+// ---------- Người chơi khác ----------
+const remotes = new Map();
+function nameTex(n) {
+  const c = document.createElement('canvas'); c.width = 256; c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = 'rgba(0,0,0,.5)'; g.fillRect(0, 0, 256, 64);
+  g.fillStyle = '#fff'; g.font = 'bold 32px sans-serif'; g.textAlign = 'center';
+  g.fillText(String(n).slice(0, 16), 128, 44);
+  return new THREE.CanvasTexture(c);
+}
+function remoteUpsert(p) {
+  let r = remotes.get(p.id);
+  if (!r) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(.6, 1.8, .6),
+      new THREE.MeshLambertMaterial({ color: p.team === 'red' ? 0xdd3333 : 0x3355dd }));
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: nameTex(p.name), depthTest: false }));
+    s.scale.set(2, .5, 1); s.position.y = 1.3; m.add(s);
+    m.position.set(p.x, p.y + .9, p.z); scene.add(m);
+    r = { mesh: m }; remotes.set(p.id, r);
+  }
+  Object.assign(r, { x: p.x, y: p.y + .9, z: p.z, yaw: p.yaw, seen: performance.now() });
+}
+function removeRemote(id) {
+  const r = remotes.get(id); if (!r) return;
+  scene.remove(r.mesh); remotes.delete(id);
+}
+
+// ---------- Vào trận / kết thúc ----------
+function startGame({ mode: m }) {
+  gameState = 'playing'; mode = m; selected = 0;
+  over.clear(); dirty = true;
+  inv = {}; HOTBAR.forEach(t => inv[t] = 64);
+  remotes.forEach((_, id) => removeRemote(id));
+  spawn();
+  $('menu').classList.add('hidden'); $('room').classList.add('hidden');
+  $('game').classList.remove('hidden'); $('banner').classList.add('hidden');
+  $('pause').classList.remove('hidden');
+  updateHotbar(); resize();
+}
+function endGame(winner) {
+  channel?.send({ type: 'broadcast', event: 'end', payload: { winner } });
+  onEnd(winner);
+}
+function onEnd(winner) {
+  if (gameState !== 'playing') return;
+  gameState = 'ended';
+  document.exitPointerLock();
+  $('banner').innerHTML = `<div class="card"><h2>Đội ${TEAM_NAME[winner]} chiến thắng!</h2>` +
+    `<button id="btnBackLobby">Rời máy chủ</button></div>`;
+  $('banner').classList.remove('hidden');
+  $('btnBackLobby').onclick = () => { $('banner').classList.add('hidden'); leaveRoom(); };
+}
+
+// ---------- Điều khiển ----------
+canvas.oncontextmenu = e => e.preventDefault();
+canvas.addEventListener('mousedown', e => {
+  if (document.pointerLockElement !== canvas) return;
+  if (e.button === 0) breakBlock(); else if (e.button === 2) placeBlock();
+});
+document.addEventListener('mousemove', e => {
+  if (document.pointerLockElement !== canvas) return;
+  P.yaw -= e.movementX * 0.002 * sens;
+  P.pitch = Math.max(-1.5, Math.min(1.5, P.pitch - e.movementY * 0.002 * sens));
+});
+document.addEventListener('pointerlockchange', () => {
+  if (document.pointerLockElement !== canvas) for (const k in keys) keys[k] = false;
+  $('pause').classList.toggle('hidden', document.pointerLockElement === canvas || gameState !== 'playing');
+});
+$('btnResume').onclick = () => canvas.requestPointerLock();
+$('btnQuit').onclick = () => leaveRoom();
+addEventListener('keydown', e => {
+  if (gameState !== 'playing' || e.repeat) return;
+  keys[e.code] = true;
+  if (e.code === 'Space' && mode === 'creative') {
+    const now = performance.now();
+    if (now - flyLast < 300) P.fly = !P.fly;
+    flyLast = now;
+  }
+  if (/^Digit[1-6]$/.test(e.code)) { selected = +e.code.slice(5) - 1; updateHotbar(); }
+});
+addEventListener('keyup', e => keys[e.code] = false);
+addEventListener('wheel', e => {
+  if (gameState !== 'playing') return;
+  selected = (selected + (e.deltaY > 0 ? 1 : -1) + HOTBAR.length) % HOTBAR.length;
+  updateHotbar();
+});
+
+// ---------- Vòng lặp chính ----------
+let last = performance.now(), lastPos = 0, lastRebuild = 0;
+function loop(now) {
+  requestAnimationFrame(loop);
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (gameState === 'playing') {
+    physics(dt);
+    if (P.y < -8) spawn();
+    if (now - lastPos > 100 && channel) {
+      lastPos = now;
+      channel.send({ type: 'broadcast', event: 'pos', payload: { id: pid, name: myName, team: myTeam, x: P.x, y: P.y, z: P.z, yaw: P.yaw } });
+    }
+  }
+  if (dirty && now - lastRebuild > 150) { dirty = false; lastRebuild = now; rebuild(); }
+  remotes.forEach((r, id) => {
+    if (now - r.seen > 6000) return removeRemote(id);
+    r.mesh.position.lerp(new THREE.Vector3(r.x, r.y, r.z), 0.3);
+    r.mesh.rotation.y = r.yaw;
+  });
+  camera.position.set(P.x, P.y + 1.62, P.z);
+  camera.rotation.set(P.pitch, P.yaw, 0, 'YXZ');
+  if (gameState !== 'lobby') renderer.render(scene, camera);
+}
+
+// ---------- Sảnh chờ / máy chủ ----------
+let room = null, channel = null, members = [], myTeam = 'red';
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const genCode = () => Array.from({ length: 6 }, () => CODE_CHARS[Math.random() * CODE_CHARS.length | 0]).join('');
+
+async function createRoom() {
+  if (!myName) return openSettings();
+  if (room) return toast('Hãy rời máy chủ hiện tại trước');
+  const name = $('srvName').value.trim() || `Máy chủ của ${myName}`;
+  const mode = $('srvMode').value;
+  for (let i = 0; i < 5; i++) {
+    const { data, error } = await sb.from('bw_rooms').insert({ code: genCode(), name, mode, host_id: pid }).select().single();
+    if (data) return enterRoom(data);
+    if (error?.code !== '23505') return toast('Lỗi tạo máy chủ: ' + error?.message);
+  }
+}
+async function joinByCode() {
+  if (!myName) return openSettings();
+  if (room) return toast('Hãy rời máy chủ hiện tại trước');
+  const code = $('joinCode').value.trim().toUpperCase();
+  if (code.length !== 6) return toast('Mã phải có 6 ký tự');
+  const { data: r } = await sb.from('bw_rooms').select('*').eq('code', code).maybeSingle();
+  if (!r) return toast('Không tìm thấy máy chủ với mã này');
+  if (r.status !== 'lobby') return toast('Máy chủ đang trong trận');
+  enterRoom(r);
+}
+async function enterRoom(r) {
+  const { data } = await sb.from('bw_room_players').select('*').eq('room_id', r.id);
+  const cur = data || [];
+  if (!cur.some(p => p.player_id === pid) && cur.length >= r.max_players) return toast('Máy chủ đã đầy');
+  const red = cur.filter(p => p.team === 'red').length, blue = cur.filter(p => p.team === 'blue').length;
+  const team = red <= blue ? 'red' : 'blue';
+  const { error } = await sb.from('bw_room_players').upsert(
+    { room_id: r.id, player_id: pid, name: myName, team }, { onConflict: 'room_id,player_id' });
+  if (error) return toast(error.message);
+
+  room = r; myTeam = team;
+  channel = sb.channel(`bw-room-${r.id}`, { config: { broadcast: { self: false } } })
+    .on('broadcast', { event: 'refresh' }, () => loadMembers())
+    .on('broadcast', { event: 'start' }, ({ payload }) => startGame(payload))
+    .on('broadcast', { event: 'blk' }, ({ payload }) => { over.set(payload.k, payload.t); dirty = true; })
+    .on('broadcast', { event: 'pos' }, ({ payload }) => remoteUpsert(payload))
+    .on('broadcast', { event: 'bye' }, ({ payload }) => removeRemote(payload.id))
+    .on('broadcast', { event: 'end' }, ({ payload }) => onEnd(payload.winner))
+    .subscribe(s => { if (s === 'SUBSCRIBED') channel.send({ type: 'broadcast', event: 'refresh' }); });
+
+  $('menu').classList.add('hidden'); $('room').classList.remove('hidden');
+  loadMembers();
+}
+async function loadMembers() {
+  if (!room) return;
+  const { data } = await sb.from('bw_room_players').select('*').eq('room_id', room.id).order('joined_at');
+  members = data || [];
+  const me = members.find(m => m.player_id === pid);
+  if (me) myTeam = me.team;
+  // Chuyển quyền chủ phòng nếu chủ cũ đã rời
+  if (!members.some(m => m.player_id === room.host_id) && members[0]?.player_id === pid) {
+    await sb.from('bw_rooms').update({ host_id: pid }).eq('id', room.id);
+    room.host_id = pid;
+  }
+  renderRoom();
+}
+function renderRoom() {
+  $('roomTitle').textContent = room.name;
+  $('roomCode').textContent = room.code;
+  $('roomMode').textContent = 'Chế độ: ' + (room.mode === 'creative' ? 'Sáng tạo' : 'Sinh tồn');
+  $('players').innerHTML = members.map(m =>
+    `<li class="${m.team}">${esc(m.name)}${m.player_id === room.host_id ? ' 👑' : ''}${m.player_id === pid ? ' (bạn)' : ''}</li>`).join('');
+  $('btnStart').classList.toggle('hidden', room.host_id !== pid);
+  loadFriends();
+}
+async function switchTeam() {
+  const me = members.find(m => m.player_id === pid); if (!me || !room) return;
+  await sb.from('bw_room_players').update({ team: me.team === 'red' ? 'blue' : 'red' }).eq('room_id', room.id).eq('player_id', pid);
+  await loadMembers();
+  channel.send({ type: 'broadcast', event: 'refresh' });
+}
+async function startMatch() {
+  if (members.length < 2) return toast('Cần ít nhất 2 người để bắt đầu');
+  await sb.from('bw_rooms').update({ status: 'playing' }).eq('id', room.id);
+  const payload = { mode: room.mode };
+  channel.send({ type: 'broadcast', event: 'start', payload });
+  startGame(payload);
+}
+async function leaveRoom() {
+  if (!room) return;
+  const rid = room.id, rest = members.filter(m => m.player_id !== pid);
+  if (gameState === 'playing') await channel?.send({ type: 'broadcast', event: 'bye', payload: { id: pid } });
+  await sb.from('bw_room_players').delete().eq('room_id', rid).eq('player_id', pid);
+  await channel?.send({ type: 'broadcast', event: 'refresh' });
+  if (room.host_id === pid && rest[0]) await sb.from('bw_rooms').update({ host_id: rest[0].player_id }).eq('id', rid);
+  if (rest.length === 0) await sb.from('bw_rooms').delete().eq('id', rid);
+  if (channel) sb.removeChannel(channel);
+  channel = null; room = null; members = []; gameState = 'lobby';
+  remotes.forEach((_, id) => removeRemote(id));
+  document.exitPointerLock();
+  $('game').classList.add('hidden'); $('room').classList.add('hidden'); $('menu').classList.remove('hidden');
+}
+
+$('btnCreate').onclick = createRoom;
+$('btnJoin').onclick = joinByCode;
+$('btnCopy').onclick = () => navigator.clipboard.writeText(room.code).then(() => toast('Đã sao chép mã'));
+$('btnSwitch').onclick = switchTeam;
+$('btnStart').onclick = startMatch;
+$('btnLeave').onclick = leaveRoom;
+
+// ---------- Bạn bè & lời mời ----------
+async function loadFriends() {
+  const { data } = await sb.from('bw_friends').select('friend_id').eq('user_id', pid);
+  const html = (data || []).map(f =>
+    `<div class="row fr"><code>${esc(f.friend_id.slice(0, 8))}…</code>` +
+    `${room ? `<button data-inv="${f.friend_id}">Mời</button>` : ''}` +
+    `<button data-del="${f.friend_id}">Xoá</button></div>`).join('') || '<small>Chưa có bạn bè</small>';
+  $('friends').innerHTML = html; $('friendsRoom').innerHTML = html;
+}
+document.addEventListener('click', async e => {
+  const inv = e.target.dataset.inv, del = e.target.dataset.del;
+  if (inv) inviteFriend(inv);
+  if (del) {
+    await sb.from('bw_friends').delete().or(`and(user_id.eq.${pid},friend_id.eq.${del}),and(user_id.eq.${del},friend_id.eq.${pid})`);
+    loadFriends();
+  }
+});
+$('btnAddFriend').onclick = async () => {
+  const fid = $('friendId').value.trim().toLowerCase();
+  if (!/^[0-9a-f-]{36}$/.test(fid)) return toast('ID không hợp lệ');
+  if (fid === pid) return toast('Không thể kết bạn với chính mình');
+  const { error } = await sb.from('bw_friends').upsert(
+    [{ user_id: pid, friend_id: fid }, { user_id: fid, friend_id: pid }],
+    { onConflict: 'user_id,friend_id', ignoreDuplicates: true });
+  if (error) return toast(error.message);
+  $('friendId').value = ''; toast('Đã kết bạn'); loadFriends();
+};
+function inviteFriend(fid) {
+  if (!room) return toast('Hãy vào máy chủ trước');
+  const ch = sb.channel(`bw-inbox-${fid}`);
+  ch.subscribe(async s => {
+    if (s !== 'SUBSCRIBED') return;
+    await ch.send({ type: 'broadcast', event: 'invite', payload: { from: myName, code: room.code } });
+    toast('Đã gửi lời mời');
+    setTimeout(() => sb.removeChannel(ch), 1000);
+  });
+}
+// Kênh nhận lời mời của chính mình
+sb.channel(`bw-inbox-${pid}`).on('broadcast', { event: 'invite' }, ({ payload }) => {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.innerHTML = `<span>${esc(payload.from)} mời bạn vào máy chủ <b>${esc(payload.code)}</b></span><button>Vào</button>`;
+  el.querySelector('button').onclick = () => { el.remove(); $('joinCode').value = payload.code; joinByCode(); };
+  $('toasts').appendChild(el);
+  setTimeout(() => el.remove(), 15000);
+}).subscribe();
+
+loadFriends();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
